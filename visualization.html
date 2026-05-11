@@ -1,0 +1,1566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quantum Processor Architecture Optimization</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=JetBrains+Mono:wght@300;400;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,300&display=swap');
+
+:root {
+  --navy:       #071428;
+  --navy-mid:   #0d2144;
+  --blue:       #1251a3;
+  --blue-mid:   #1a6fd4;
+  --blue-light: #4da3f7;
+  --blue-pale:  #a8d4ff;
+  --cyan:       #00c8ff;
+  --gold:       #f0b429;
+  --gold-dim:   #b8842a;
+  --green:      #12b886;
+  --green-dim:  #0d8a69;
+  --red:        #e03131;
+  --red-dim:    #a82626;
+  --white:      #f0f8ff;
+  --text-dim:   #7ba7cc;
+  --panel-bg:   rgba(255,255,255,0.04);
+  --panel-bdr:  rgba(77,163,247,0.2);
+  --dur: 0.6s;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%; height: 100%;
+  background: var(--navy);
+  color: var(--white);
+  font-family: 'Source Serif 4', Georgia, serif;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* ── BACKGROUND FIELD ──────────────────────────────────────────────── */
+#bg-canvas {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── APP SHELL ─────────────────────────────────────────────────────── */
+#app {
+  position: relative;
+  width: 100vw; height: 100vh;
+  display: flex; flex-direction: column;
+  z-index: 1;
+}
+
+/* ── PROGRESS BAR ──────────────────────────────────────────────────── */
+#progress-rail {
+  width: 100%;
+  height: 3px;
+  background: rgba(77,163,247,0.12);
+  flex-shrink: 0;
+}
+#progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue-mid), var(--cyan));
+  transition: width 0.08s linear;
+  box-shadow: 0 0 12px var(--cyan);
+}
+
+/* ── SCENE CONTAINER ───────────────────────────────────────────────── */
+#stage {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.scene {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  padding: 28px 36px 20px;
+  opacity: 0;
+  transform: translateY(18px);
+  pointer-events: none;
+  transition: opacity 0.55s ease, transform 0.55s ease;
+}
+.scene.active {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* ── CONTROL BAR ───────────────────────────────────────────────────── */
+#controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 28px;
+  background: rgba(7,20,40,0.92);
+  border-top: 1px solid rgba(77,163,247,0.15);
+  flex-shrink: 0;
+  backdrop-filter: blur(12px);
+}
+
+.ctrl-btn {
+  background: rgba(18,81,163,0.6);
+  border: 1px solid rgba(77,163,247,0.3);
+  color: var(--white);
+  font-family: 'Source Serif 4', serif;
+  font-size: 12px;
+  padding: 6px 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+  white-space: nowrap;
+}
+.ctrl-btn:hover { background: rgba(26,111,212,0.8); border-color: var(--blue-light); }
+.ctrl-btn:active { background: var(--blue); }
+
+#scene-label {
+  flex: 1;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--blue-pale);
+  letter-spacing: 0.08em;
+}
+
+/* ── SCENE HEADER ──────────────────────────────────────────────────── */
+.scene-header {
+  margin-bottom: 18px;
+  flex-shrink: 0;
+}
+.scene-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  color: var(--cyan);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.scene-title {
+  font-family: 'Playfair Display', Georgia, serif;
+  font-size: clamp(18px, 2.4vw, 28px);
+  font-weight: 700;
+  color: var(--white);
+  line-height: 1.15;
+}
+.scene-subtitle {
+  font-family: 'Source Serif 4', serif;
+  font-style: italic;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+
+/* ── CARD COMPONENT ────────────────────────────────────────────────── */
+.card {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-bdr);
+  border-radius: 12px;
+  padding: 18px 20px;
+  backdrop-filter: blur(8px);
+}
+.card.gold-border  { border-color: rgba(240,180,41,0.35); }
+.card.green-border { border-color: rgba(18,184,134,0.35); }
+.card.red-border   { border-color: rgba(224,49,49,0.35); }
+.card.blue-border  { border-color: rgba(77,163,247,0.45); }
+.card-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  color: var(--blue-light);
+}
+.card-body {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-dim);
+}
+
+/* ── CANVAS ELEMENTS ───────────────────────────────────────────────── */
+canvas { display: block; }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 0 — INTRO                                                      */
+/* ──────────────────────────────────────────────────────────────────── */
+#s0 {
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+}
+#s0 .intro-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--cyan);
+  text-transform: uppercase;
+  animation: fadeSlideUp 0.9s ease 0.2s both;
+}
+#s0 h1 {
+  font-family: 'Playfair Display', serif;
+  font-size: clamp(26px, 3.8vw, 52px);
+  font-weight: 900;
+  line-height: 1.08;
+  background: linear-gradient(135deg, #fff 30%, var(--blue-light) 70%, var(--cyan));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  animation: fadeSlideUp 0.9s ease 0.45s both;
+}
+#s0 .intro-sub {
+  font-size: clamp(13px, 1.6vw, 17px);
+  font-style: italic;
+  color: var(--text-dim);
+  max-width: 620px;
+  line-height: 1.6;
+  animation: fadeSlideUp 0.9s ease 0.7s both;
+}
+#s0 .intro-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--blue-pale);
+  background: rgba(77,163,247,0.08);
+  border: 1px solid rgba(77,163,247,0.2);
+  border-radius: 20px;
+  padding: 6px 18px;
+  animation: fadeSlideUp 0.9s ease 0.95s both;
+}
+#s0 .intro-ref {
+  font-size: 11px;
+  color: rgba(122,167,204,0.6);
+  animation: fadeSlideUp 0.9s ease 1.15s both;
+}
+.intro-divider {
+  width: 80px; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--blue-mid), transparent);
+  animation: fadeSlideUp 0.9s ease 0.85s both;
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 1 — IBM ARCHITECTURE                                           */
+/* ──────────────────────────────────────────────────────────────────── */
+#s1 { gap: 12px; }
+#s1 .s1-body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  min-height: 0;
+}
+#s1-canvas-wrap {
+  position: relative;
+  border-radius: 12px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  overflow: hidden;
+}
+#s1-canvas { width: 100%; height: 100%; }
+#s1-legend {
+  position: absolute; bottom: 12px; left: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.legend-row { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+
+#s1-info { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+.info-block {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-bdr);
+  border-radius: 10px;
+  padding: 14px 16px;
+  animation: slideInRight 0.5s ease both;
+}
+.info-block:nth-child(1) { animation-delay: 0.1s; }
+.info-block:nth-child(2) { animation-delay: 0.25s; }
+.info-block:nth-child(3) { animation-delay: 0.4s; }
+.info-block:nth-child(4) { animation-delay: 0.55s; }
+.info-icon { font-size: 20px; margin-bottom: 6px; }
+.info-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--cyan);
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+.info-text { font-size: 12px; line-height: 1.65; color: var(--text-dim); }
+.info-text strong { color: var(--white); }
+.info-text .warn { color: var(--gold); }
+.info-text .bad  { color: #f08080; }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 2 — WHAT WE MEASURE                                            */
+/* ──────────────────────────────────────────────────────────────────── */
+#s2 { gap: 14px; }
+#s2 .s2-body { flex: 1; display: flex; flex-direction: column; gap: 14px; min-height: 0; }
+.metrics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  flex-shrink: 0;
+}
+.metric-card {
+  border-radius: 12px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+}
+.metric-card::before {
+  content: '';
+  position: absolute; inset: 0;
+  opacity: 0.06;
+  border-radius: 12px;
+}
+.metric-card.gates { background: rgba(18,81,163,0.15); border: 1px solid rgba(77,163,247,0.3); }
+.metric-card.gates::before { background: linear-gradient(135deg, var(--blue), transparent); }
+.metric-card.yield { background: rgba(18,184,134,0.1); border: 1px solid rgba(18,184,134,0.3); }
+.metric-card.yield::before { background: linear-gradient(135deg, var(--green), transparent); }
+.metric-card-header {
+  display: flex; align-items: center; gap: 10px;
+  margin-bottom: 10px;
+}
+.metric-icon-big { font-size: 28px; }
+.metric-card-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 15px; font-weight: 700;
+}
+.gates .metric-card-title { color: var(--blue-light); }
+.yield .metric-card-title { color: var(--green); }
+.metric-desc { font-size: 12px; line-height: 1.7; color: var(--text-dim); }
+.metric-desc em { color: var(--white); font-style: normal; }
+.metric-verdict {
+  margin-top: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.gates .metric-verdict { color: var(--blue-light); }
+.yield .metric-verdict { color: var(--green); }
+
+/* Sim bar */
+.sim-wrap {
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+.sim-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; color: var(--text-dim);
+  margin-bottom: 8px;
+  display: flex; justify-content: space-between;
+}
+.sim-rail {
+  width: 100%; height: 6px;
+  background: rgba(77,163,247,0.1);
+  border-radius: 3px; overflow: hidden;
+}
+.sim-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--blue), var(--cyan));
+  border-radius: 3px;
+  width: 0%;
+  box-shadow: 0 0 10px var(--cyan);
+  transition: width 0.1s linear;
+}
+
+/* Results row */
+.results-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.result-card {
+  border-radius: 10px;
+  padding: 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.result-card.visible { opacity: 1; transform: translateY(0); }
+.result-card.ibm   { background: rgba(176,190,197,0.08); border: 1px solid rgba(176,190,197,0.25); }
+.result-card.eff   { background: rgba(77,163,247,0.07);  border: 1px solid rgba(77,163,247,0.25); }
+.result-card.ours  { background: rgba(18,184,134,0.08);  border: 1px solid rgba(18,184,134,0.4); box-shadow: 0 0 20px rgba(18,184,134,0.12); }
+.result-name {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.1em;
+  color: var(--text-dim); text-transform: uppercase;
+}
+.result-gates {
+  font-family: 'Playfair Display', serif;
+  font-size: 26px; font-weight: 900;
+  color: var(--white);
+}
+.result-yield {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+.result-card.ibm  .result-yield { color: var(--red); }
+.result-card.eff  .result-yield { color: var(--blue-light); }
+.result-card.ours .result-yield { color: var(--green); }
+.result-badge {
+  display: inline-block;
+  background: var(--green-dim);
+  color: var(--white);
+  font-size: 10px; font-family: 'JetBrains Mono', monospace;
+  padding: 2px 8px; border-radius: 4px;
+  margin-top: 4px;
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 3 — GA OPTIMIZATION                                            */
+/* ──────────────────────────────────────────────────────────────────── */
+#s3 { gap: 12px; }
+#s3 .s3-body {
+  flex: 1; display: grid;
+  grid-template-columns: 1fr 1fr 280px;
+  gap: 14px; min-height: 0;
+}
+.graph-panel {
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+  display: flex; flex-direction: column;
+}
+.graph-panel-label {
+  padding: 10px 14px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.12em;
+  color: var(--text-dim); text-transform: uppercase;
+}
+.graph-panel canvas { flex: 1; width: 100%; }
+#s3-info { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+
+.ga-bar-wrap {
+  margin-top: auto;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  border-radius: 10px;
+  padding: 12px 16px;
+  flex-shrink: 0;
+}
+.ga-stats {
+  display: flex; gap: 16px;
+  margin-bottom: 8px;
+}
+.ga-stat { display: flex; flex-direction: column; gap: 2px; }
+.ga-stat-label { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--text-dim); letter-spacing: 0.1em; text-transform: uppercase; }
+.ga-stat-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; color: var(--blue-light); }
+
+/* Lambda card */
+.lambda-card {
+  background: rgba(240,180,41,0.07);
+  border: 1px solid rgba(240,180,41,0.3);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.lambda-title { font-family: 'Playfair Display', serif; font-size: 13px; font-weight: 700; color: var(--gold); margin-bottom: 8px; }
+.lambda-row { display: flex; gap: 10px; margin-bottom: 6px; }
+.lambda-badge {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+  padding: 2px 8px; border-radius: 4px; flex-shrink: 0;
+}
+.lambda-badge.lo { background: rgba(77,163,247,0.2); color: var(--blue-light); }
+.lambda-badge.hi { background: rgba(18,184,134,0.2); color: var(--green); }
+.lambda-desc { font-size: 11px; color: var(--text-dim); line-height: 1.5; }
+
+/* Compare mini-cards */
+.compare-grid { display: flex; flex-direction: column; gap: 8px; }
+.cmp-card {
+  border-radius: 8px; padding: 10px 12px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.cmp-card.ibm  { background: rgba(176,190,197,0.06); border: 1px solid rgba(176,190,197,0.2); }
+.cmp-card.eff  { background: rgba(77,163,247,0.06);  border: 1px solid rgba(77,163,247,0.2); }
+.cmp-card.ours { background: rgba(18,184,134,0.08);  border: 1px solid rgba(18,184,134,0.35); }
+.cmp-name { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); }
+.cmp-vals { text-align: right; }
+.cmp-gates { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 700; color: var(--white); }
+.cmp-yield { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-dim); }
+.cmp-card.ours .cmp-gates { color: var(--green); }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 4 — PCB ANALOGY                                                */
+/* ──────────────────────────────────────────────────────────────────── */
+#s4 { gap: 12px; }
+#s4 .s4-body {
+  flex: 1; display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr auto;
+  gap: 14px; min-height: 0;
+}
+#s4 .pcb-row { grid-column: 1 / -1; }
+.pcb-boards { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; flex: 1; }
+.pcb-wrap {
+  background: rgba(255,255,255,0.02);
+  border-radius: 12px;
+  border: 1px solid var(--panel-bdr);
+  overflow: hidden;
+  position: relative;
+  display: flex; flex-direction: column;
+}
+.pcb-wrap.optimised { border-color: rgba(18,184,134,0.35); }
+.pcb-wrap-label {
+  padding: 8px 14px 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.12em;
+  color: var(--text-dim); text-transform: uppercase;
+}
+.pcb-wrap canvas { flex: 1; width: 100%; }
+
+.analogy-table {
+  grid-column: 1 / -1;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  overflow: hidden;
+}
+.analogy-table table {
+  width: 100%; border-collapse: collapse;
+  font-size: 11px;
+}
+.analogy-table th {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px; letter-spacing: 0.1em;
+  color: var(--cyan); text-transform: uppercase;
+  padding: 8px 14px;
+  background: rgba(77,163,247,0.07);
+  text-align: left;
+}
+.analogy-table td {
+  padding: 7px 14px;
+  border-top: 1px solid rgba(77,163,247,0.07);
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+.analogy-table td:first-child { color: var(--blue-light); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+.analogy-table tr:hover td { background: rgba(77,163,247,0.04); }
+
+.insight-strip {
+  grid-column: 1 / -1;
+  background: rgba(18,184,134,0.06);
+  border: 1px solid rgba(18,184,134,0.25);
+  border-radius: 10px;
+  padding: 12px 18px;
+  font-size: 12px; line-height: 1.65;
+  color: var(--text-dim);
+}
+.insight-strip strong { color: var(--green); }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 5 — MOLECULAR ENERGY                                           */
+/* ──────────────────────────────────────────────────────────────────── */
+#s5 { gap: 12px; }
+#s5 .s5-body {
+  flex: 1; display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px; min-height: 0;
+}
+.mol-panel {
+  display: flex; flex-direction: column; gap: 10px;
+  min-height: 0;
+}
+.mol-header {
+  display: flex; align-items: center; gap: 10px;
+}
+.mol-header-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  flex-shrink: 0;
+}
+.mol-title {
+  font-family: 'Playfair Display', serif;
+  font-size: 14px; font-weight: 700;
+}
+.mol-panel.noisy  .mol-header-dot { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.mol-panel.stable .mol-header-dot { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.mol-panel.noisy  .mol-title { color: var(--red); }
+.mol-panel.stable .mol-title { color: var(--green); }
+
+.mol-canvas-wrap {
+  background: rgba(255,255,255,0.02);
+  border-radius: 10px;
+  border: 1px solid var(--panel-bdr);
+  flex-shrink: 0;
+  height: 110px;
+  position: relative;
+  overflow: hidden;
+}
+.mol-panel.noisy  .mol-canvas-wrap { border-color: rgba(224,49,49,0.25); }
+.mol-panel.stable .mol-canvas-wrap { border-color: rgba(18,184,134,0.25); }
+.mol-canvas-wrap canvas { width: 100%; height: 100%; }
+
+.energy-display {
+  font-family: 'JetBrains Mono', monospace;
+  display: flex; align-items: baseline; gap: 8px;
+  flex-shrink: 0;
+}
+.energy-val {
+  font-size: 22px; font-weight: 700;
+}
+.mol-panel.noisy  .energy-val { color: var(--red); }
+.mol-panel.stable .energy-val { color: var(--green); }
+.energy-unit { font-size: 11px; color: var(--text-dim); }
+.energy-true { font-size: 10px; color: var(--text-dim); }
+
+.plot-wrap {
+  flex: 1; min-height: 0;
+  background: rgba(255,255,255,0.02);
+  border-radius: 10px;
+  border: 1px solid var(--panel-bdr);
+  overflow: hidden;
+  position: relative;
+}
+.mol-panel.noisy  .plot-wrap { border-color: rgba(224,49,49,0.2); }
+.mol-panel.stable .plot-wrap { border-color: rgba(18,184,134,0.2); }
+.plot-wrap canvas { width: 100%; height: 100%; }
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* SCENE 6 — SUMMARY                                                    */
+/* ──────────────────────────────────────────────────────────────────── */
+#s6 { gap: 14px; }
+#s6 .s6-body {
+  flex: 1; display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px; min-height: 0;
+}
+.summary-left { display: flex; flex-direction: column; gap: 10px; }
+.summary-right { display: flex; flex-direction: column; gap: 10px; }
+
+.metric-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid var(--panel-bdr);
+  opacity: 0;
+  transform: translateX(-18px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.metric-row.visible { opacity: 1; transform: translateX(0); }
+.metric-number {
+  font-family: 'Playfair Display', serif;
+  font-size: 28px; font-weight: 900;
+  white-space: nowrap; min-width: 110px;
+}
+.metric-row:nth-child(1) .metric-number { color: var(--blue-light); }
+.metric-row:nth-child(2) .metric-number { color: var(--blue-light); }
+.metric-row:nth-child(3) .metric-number { color: var(--gold); }
+.metric-row:nth-child(4) .metric-number { color: var(--gold); }
+.metric-row:nth-child(5) .metric-number { color: var(--green); }
+.metric-desc-text { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+
+.hook-card {
+  border-radius: 10px; padding: 16px 18px;
+  flex: 1;
+  display: flex; flex-direction: column; gap: 6px;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+}
+.hook-card.visible { opacity: 1; transform: translateY(0); }
+.hook-card:nth-child(1) { background: rgba(18,81,163,0.12); border: 1px solid rgba(77,163,247,0.25); }
+.hook-card:nth-child(2) { background: rgba(18,184,134,0.08); border: 1px solid rgba(18,184,134,0.25); }
+.hook-card:nth-child(3) { background: rgba(240,180,41,0.07); border: 1px solid rgba(240,180,41,0.25); }
+.hook-emoji { font-size: 22px; }
+.hook-title { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 700; color: var(--white); }
+.hook-text { font-size: 11px; color: var(--text-dim); line-height: 1.65; }
+
+/* ── KEYFRAMES ─────────────────────────────────────────────────────── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+.pulse { animation: pulse 1.4s ease-in-out infinite; }
+
+/* ── SCROLLBAR ─────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(77,163,247,0.3); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<canvas id="bg-canvas"></canvas>
+
+<div id="app">
+  <div id="progress-rail"><div id="progress-fill"></div></div>
+
+  <div id="stage">
+
+    <!-- ─────────────── SCENE 0 — INTRO ─────────────── -->
+    <div class="scene active" id="s0">
+      <div class="intro-eyebrow">Research Visualization</div>
+      <h1>Quantum Processor<br>Architecture Optimization</h1>
+      <p class="intro-sub">Improving performance &amp; reducing frequency collisions in superconducting quantum processors</p>
+      <div class="intro-divider"></div>
+      <span class="intro-tag">Demo — qpe_n9 &nbsp;·&nbsp; 9-Qubit Quantum Phase Estimation</span>
+      <p class="intro-ref">Yang et al., Results in Physics 53 (2023) 106944</p>
+    </div>
+
+    <!-- ─────────────── SCENE 1 — IBM ARCHITECTURE ─────────────── -->
+    <div class="scene" id="s1">
+      <div class="scene-header">
+        <div class="scene-tag">Step 01</div>
+        <div class="scene-title">IBM General-Purpose Architecture</div>
+        <div class="scene-subtitle">20-qubit square lattice · Fixed stripe frequency pattern</div>
+      </div>
+      <div class="s1-body">
+        <div id="s1-canvas-wrap">
+          <canvas id="s1-canvas"></canvas>
+          <div id="s1-legend">
+            <div class="legend-row"><div class="legend-dot" style="background:#1a6fd4;box-shadow:0 0 6px #1a6fd4"></div>Active qubits (qpe_n9)</div>
+            <div class="legend-row"><div class="legend-dot" style="background:#455a64"></div>Inactive qubits</div>
+          </div>
+        </div>
+        <div id="s1-info">
+          <div class="info-block">
+            <div class="info-icon">⚛️</div>
+            <div class="info-label">What is a Qubit?</div>
+            <div class="info-text">Each <strong>dot</strong> is a qubit — a tiny quantum memory that can exist in superposition. Lines connecting dots are <strong>coupling edges</strong>: only connected qubits can exchange quantum information directly.</div>
+          </div>
+          <div class="info-block">
+            <div class="info-icon">🔗</div>
+            <div class="info-label">Why Connections Matter</div>
+            <div class="info-text">To run a quantum program, qubit states must <strong>travel along connections</strong>. If two qubits that need to interact aren't directly linked, the computer must reroute through intermediate nodes — adding <span class="warn">extra SWAP gates</span>.</div>
+          </div>
+          <div class="info-block">
+            <div class="info-icon">⚠️</div>
+            <div class="info-label">The Cost of Extra Hops</div>
+            <div class="info-text"><span class="bad">Extra hops = extra gates = more errors &amp; noise.</span> IBM's 20-qubit square lattice is general-purpose — optimised for nobody in particular. For QPE, only <strong>9 of 20 qubits</strong> are used, leaving most connections wasted.</div>
+          </div>
+          <div class="info-block">
+            <div class="info-icon">🎯</div>
+            <div class="info-label">Our Goal</div>
+            <div class="info-text">Design an architecture <strong>tailored to the specific circuit</strong> — minimising the number of SWAP gates while keeping qubit frequencies from colliding with each other.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCENE 2 — WHAT WE MEASURE ─────────────── -->
+    <div class="scene" id="s2">
+      <div class="scene-header">
+        <div class="scene-tag">Step 02</div>
+        <div class="scene-title">What We Measure</div>
+        <div class="scene-subtitle">Two complementary metrics define architecture quality</div>
+      </div>
+      <div class="s2-body">
+        <div class="metrics-row">
+          <div class="metric-card gates">
+            <div class="metric-card-header">
+              <div class="metric-icon-big">🔁</div>
+              <div>
+                <div class="metric-card-title">SWAP Gate Count</div>
+                <div style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace;">Lower is better ↓</div>
+              </div>
+            </div>
+            <div class="metric-desc">When qubits that must interact are <em>not directly connected</em>, the compiler inserts <em>SWAP gates</em> to physically move the quantum state to a neighbouring qubit. Each SWAP is expensive: it takes time, consumes energy, and introduces decoherence noise. <em>Fewer SWAPs = faster, more accurate computation.</em></div>
+            <div class="metric-verdict">TARGET: Minimise Σ d(i,j) across all gate pairs</div>
+          </div>
+          <div class="metric-card yield">
+            <div class="metric-card-header">
+              <div class="metric-icon-big">📡</div>
+              <div>
+                <div class="metric-card-title">Yield Rate</div>
+                <div style="font-size:11px;color:rgba(18,184,134,0.7);font-family:'JetBrains Mono',monospace;">Higher is better ↑</div>
+              </div>
+            </div>
+            <div class="metric-desc">Each qubit vibrates at its own <em>resonance frequency</em>. If two neighbouring qubits have similar frequencies, they <em>accidentally interfere</em> — a frequency collision. Yield Rate is the <em>probability that no collision occurs</em>. A yield of 0 means collisions are certain; 1.0 means the design is perfectly collision-free.</div>
+            <div class="metric-verdict">TARGET: Maximise P(no collision) via frequency allocation</div>
+          </div>
+        </div>
+        <div class="sim-wrap">
+          <div class="sim-label">
+            <span id="sim-text" class="pulse">Simulating QPE on IBM device…</span>
+            <span id="sim-pct" style="font-weight:600;color:var(--blue-light)">0%</span>
+          </div>
+          <div class="sim-rail"><div class="sim-fill" id="sim-fill"></div></div>
+        </div>
+        <div class="results-row">
+          <div class="result-card ibm" id="rc-ibm">
+            <div class="result-name">IBM Baseline</div>
+            <div class="result-gates">139 <span style="font-size:14px;color:var(--text-dim)">gates</span></div>
+            <div class="result-yield">Yield: <span style="color:var(--red)">0.0000</span></div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Fixed stripe pattern →<br>zero collision immunity</div>
+          </div>
+          <div class="result-card eff" id="rc-eff">
+            <div class="result-name">eff-5-freq</div>
+            <div class="result-gates">160 <span style="font-size:14px;color:var(--text-dim)">gates</span></div>
+            <div class="result-yield">Yield: <span style="color:var(--blue-light)">0.0476</span></div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:4px">Better yield but<br>more gates than IBM</div>
+          </div>
+          <div class="result-card ours" id="rc-ours">
+            <div class="result-name">Our Method ★</div>
+            <div class="result-gates">136 <span style="font-size:14px;color:var(--text-dim)">gates</span></div>
+            <div class="result-yield">Yield: <span style="color:var(--green)">0.0913</span></div>
+            <div class="result-badge">Fewest gates · Best yield</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCENE 3 — GA OPTIMIZATION ─────────────── -->
+    <div class="scene" id="s3">
+      <div class="scene-header">
+        <div class="scene-tag">Step 03</div>
+        <div class="scene-title">Genetic Algorithm Optimization</div>
+        <div class="scene-subtitle">λ sweep 1→6 · Fitness = α·Σgates + β·λ·max-degree</div>
+      </div>
+      <div class="s3-body">
+        <div class="graph-panel">
+          <div class="graph-panel-label">Random Initial Layout</div>
+          <canvas id="ga-canvas-left"></canvas>
+        </div>
+        <div class="graph-panel">
+          <div class="graph-panel-label">GA-Optimised Ring Architecture</div>
+          <canvas id="ga-canvas-right"></canvas>
+        </div>
+        <div id="s3-info">
+          <div class="ga-bar-wrap">
+            <div class="ga-stats">
+              <div class="ga-stat">
+                <div class="ga-stat-label">Lambda (λ)</div>
+                <div class="ga-stat-value" id="ga-lam">1</div>
+              </div>
+              <div class="ga-stat">
+                <div class="ga-stat-label">Generation</div>
+                <div class="ga-stat-value" id="ga-gen">0</div>
+              </div>
+              <div class="ga-stat">
+                <div class="ga-stat-label">Fitness</div>
+                <div class="ga-stat-value" id="ga-fit">—</div>
+              </div>
+            </div>
+            <div class="sim-rail"><div class="sim-fill" id="ga-fill"></div></div>
+          </div>
+
+          <div class="lambda-card">
+            <div class="lambda-title">λ Trade-off</div>
+            <div class="lambda-row">
+              <span class="lambda-badge lo">Low λ</span>
+              <span class="lambda-desc">Prioritises fewer SWAP gates → better raw performance</span>
+            </div>
+            <div class="lambda-row">
+              <span class="lambda-badge hi">High λ</span>
+              <span class="lambda-desc">Prioritises lower max-degree → better yield rate</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-dim);margin-top:6px;line-height:1.5">We sweep λ = 1…6 and select the architecture with the best combined (gates ↓, yield ↑) score.</div>
+          </div>
+
+          <div class="compare-grid">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;padding:0 2px">Final Results — qpe_n9</div>
+            <div class="cmp-card ibm">
+              <div class="cmp-name">IBM Baseline</div>
+              <div class="cmp-vals"><div class="cmp-gates">139</div><div class="cmp-yield">yield: 0.0000</div></div>
+            </div>
+            <div class="cmp-card eff">
+              <div class="cmp-name">eff-5-freq</div>
+              <div class="cmp-vals"><div class="cmp-gates">160</div><div class="cmp-yield">yield: 0.0476</div></div>
+            </div>
+            <div class="cmp-card ours">
+              <div class="cmp-name">Ours ★</div>
+              <div class="cmp-vals"><div class="cmp-gates">136</div><div class="cmp-yield" style="color:var(--green)">yield: 0.0913</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCENE 4 — PCB ANALOGY ─────────────── -->
+    <div class="scene" id="s4">
+      <div class="scene-header">
+        <div class="scene-tag">Step 04</div>
+        <div class="scene-title">PCB Layout Analogy</div>
+        <div class="scene-subtitle">The same graph-theory principle used in electronics engineering</div>
+      </div>
+      <div class="s4-body">
+        <div class="pcb-boards" style="grid-column:1/-1">
+          <div class="pcb-wrap">
+            <div class="pcb-wrap-label">Random Component Placement</div>
+            <canvas id="pcb-canvas-left"></canvas>
+          </div>
+          <div class="pcb-wrap optimised">
+            <div class="pcb-wrap-label">Graph-Optimised Layout</div>
+            <canvas id="pcb-canvas-right"></canvas>
+          </div>
+        </div>
+        <div class="analogy-table">
+          <table>
+            <thead><tr><th>Quantum Concept</th><th>PCB / Electronics Equivalent</th></tr></thead>
+            <tbody>
+              <tr><td>Qubit</td><td>Electronic component (MCU, sensor, ADC)</td></tr>
+              <tr><td>Coupling edge</td><td>PCB trace / copper wire</td></tr>
+              <tr><td>SWAP gate count</td><td>Total trace length — shorter = less signal loss</td></tr>
+              <tr><td>Frequency collision</td><td>Signal crosstalk / electromagnetic interference</td></tr>
+              <tr><td>Yield rate</td><td>Board reliability — probability of clean signal integrity</td></tr>
+              <tr><td>Optimised architecture</td><td>Minimal-length, interference-free component placement</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="insight-strip">
+          <strong>Key Insight:</strong> Optimising a quantum processor layout is mathematically identical to optimising a PCB — minimise wire length (SWAP gates), avoid signal interference (frequency collisions). Same graph-theory objective function, different physical domain. This is why classical EDA tools and quantum compiler research share algorithms.
+        </div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCENE 5 — MOLECULAR ENERGY ─────────────── -->
+    <div class="scene" id="s5">
+      <div class="scene-header">
+        <div class="scene-tag">Step 05</div>
+        <div class="scene-title">Practical Application — H₂ Molecular Energy</div>
+        <div class="scene-subtitle">Quantum Phase Estimation finds the electronic ground-state energy of hydrogen</div>
+      </div>
+      <div class="s5-body">
+        <div class="mol-panel noisy">
+          <div class="mol-header">
+            <div class="mol-header-dot"></div>
+            <div class="mol-title">IBM Architecture — Noisy</div>
+          </div>
+          <div class="mol-canvas-wrap"><canvas id="mol-left"></canvas></div>
+          <div class="energy-display">
+            <span class="energy-val" id="e-ibm">−1.2841</span>
+            <span class="energy-unit">Hartree</span>
+            <span class="energy-true">(true: −1.1362 Ha)</span>
+          </div>
+          <div class="plot-wrap"><canvas id="plot-left"></canvas></div>
+          <div style="font-size:11px;color:var(--red);line-height:1.5;padding:2px 0">High gate count → more decoherence → energy estimate oscillates. Wrong energy = wrong chemistry.</div>
+        </div>
+        <div class="mol-panel stable">
+          <div class="mol-header">
+            <div class="mol-header-dot"></div>
+            <div class="mol-title">Our Architecture — Stable</div>
+          </div>
+          <div class="mol-canvas-wrap"><canvas id="mol-right"></canvas></div>
+          <div class="energy-display">
+            <span class="energy-val" id="e-our">−1.5280</span>
+            <span class="energy-unit">Hartree</span>
+            <span class="energy-true">(true: −1.1362 Ha)</span>
+          </div>
+          <div class="plot-wrap"><canvas id="plot-right"></canvas></div>
+          <div style="font-size:11px;color:var(--green);line-height:1.5;padding:2px 0">Fewer gates + better yield → rapid convergence to true ground state. Trustworthy quantum chemistry simulation.</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:10px;flex-shrink:0">
+        <div class="card-title">Why Molecular Simulation Matters</div>
+        <div class="card-body">QPE is the core algorithm for simulating electrons in molecules — essential for <strong style="color:var(--blue-light)">drug discovery</strong>, <strong style="color:var(--green)">battery design</strong>, and <strong style="color:var(--gold)">materials science</strong>. A single energy miscalculation cascades into wrong bond predictions, wrong reaction rates, wrong drug candidates. Better processor architecture directly means <em style="color:var(--white)">more trustworthy quantum chemistry</em>.</div>
+      </div>
+    </div>
+
+    <!-- ─────────────── SCENE 6 — SUMMARY ─────────────── -->
+    <div class="scene" id="s6">
+      <div class="scene-header">
+        <div class="scene-tag">Results</div>
+        <div class="scene-title">Summary</div>
+        <div class="scene-subtitle">Our method outperforms IBM baseline and eff-5-freq across 16 benchmarks</div>
+      </div>
+      <div class="s6-body">
+        <div class="summary-left">
+          <div class="metric-row" id="mr0"><div class="metric-number">↑ 15.61%</div><div class="metric-desc-text">Average performance improvement over IBM baseline across all 16 benchmarks</div></div>
+          <div class="metric-row" id="mr1"><div class="metric-number">↓ 21.33%</div><div class="metric-desc-text">Minimum reduction in frequency collision probability versus IBM</div></div>
+          <div class="metric-row" id="mr2"><div class="metric-number">↑ 6.58%</div><div class="metric-desc-text">Performance gain over the eff-5-freq method</div></div>
+          <div class="metric-row" id="mr3"><div class="metric-number">↑ 6.45%</div><div class="metric-desc-text">Yield rate improvement over eff-5-freq</div></div>
+          <div class="metric-row" id="mr4"><div class="metric-number" style="font-size:18px">136 gates<br><span style="color:var(--green);font-size:14px">yield 0.0913</span></div><div class="metric-desc-text">qpe_n9 — our best result vs IBM: 139 gates, yield 0.000</div></div>
+        </div>
+        <div class="summary-right">
+          <div style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:0.12em;color:var(--text-dim);text-transform:uppercase;margin-bottom:4px">Real-World Impact</div>
+          <div class="hook-card" id="hk0"><div class="hook-emoji">🔐</div><div class="hook-title">Post-Quantum Cryptography</div><div class="hook-text">Shor's algorithm — which breaks RSA encryption — runs on QPE. Better architecture means faster, more reliable factoring. The race between quantum hardware and post-quantum cryptography standards depends on exactly this kind of optimization.</div></div>
+          <div class="hook-card" id="hk1"><div class="hook-emoji">💊</div><div class="hook-title">Drug Discovery</div><div class="hook-text">Molecular energy simulation guides the design of new pharmaceuticals. A wrong ground-state energy → wrong binding affinity prediction → wrong drug candidate. Reliable quantum architecture makes quantum-accelerated drug discovery viable.</div></div>
+          <div class="hook-card" id="hk2"><div class="hook-emoji">🔋</div><div class="hook-title">Materials &amp; Energy</div><div class="hook-text">Designing better batteries, solar cells, and superconductors requires simulating electron behaviour at quantum scale. Trustworthy QPE on optimised hardware is the enabling technology.</div></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /stage -->
+
+  <div id="controls">
+    <button class="ctrl-btn" onclick="prevScene()">◀ Prev</button>
+    <button class="ctrl-btn" id="btn-pause" onclick="togglePause()">⏸ Pause</button>
+    <button class="ctrl-btn" onclick="nextScene()">Next ▶</button>
+    <div id="scene-label">Scene 1 / 7 — Intro</div>
+    <button class="ctrl-btn" onclick="restartAll()">↺ Restart</button>
+  </div>
+</div>
+
+<script>
+// ─── CONSTANTS ──────────────────────────────────────────────────────────────
+const SCENE_NAMES  = ['Intro','IBM Architecture','What We Measure','GA Optimization','PCB Analogy','Molecular Energy','Summary'];
+const SCENE_TIMES  = [4000, 8000, 9000, 13000, 10000, 12000, 5000];
+const N_SCENES     = 7;
+const QPE_EDGES    = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],[7,8],[8,0],[0,4],[1,5],[2,6]];
+const IBM_EDGES    = [[0,1],[1,2],[2,3],[3,4],[5,6],[6,7],[7,8],[8,9],[10,11],[11,12],[12,13],[13,14],[15,16],[16,17],[17,18],[18,19],[0,5],[1,6],[2,7],[3,8],[4,9],[5,10],[6,11],[7,12],[8,13],[9,14],[10,15],[11,16],[12,17],[13,18],[14,19]];
+const ACTIVE_9     = new Set([0,2,4,6,8,10,12,14,16]);
+const TRUE_ENERGY  = -1.1362;
+
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let currentScene = 0, elapsed = 0, paused = false;
+let lastTs = null, rafId = null;
+let sceneTimers = {}; // per-scene animation state
+
+// ─── MATH ────────────────────────────────────────────────────────────────────
+const lerp  = (a,b,t) => a+(b-a)*t;
+const clamp = (v,lo=0,hi=1) => Math.max(lo,Math.min(hi,v));
+const ease  = t => t*t*(3-2*t);
+const easeOut = t => 1-(1-t)**3;
+const phase = (t,s,e) => clamp((t-s)/Math.max(1e-6,e-s));
+
+// ─── BACKGROUND CANVAS ───────────────────────────────────────────────────────
+(function initBG(){
+  const cv = document.getElementById('bg-canvas');
+  const ctx = cv.getContext('2d');
+  let stars = [];
+  function resize(){
+    cv.width = window.innerWidth; cv.height = window.innerHeight;
+    stars = Array.from({length:90},()=>({
+      x:Math.random()*cv.width, y:Math.random()*cv.height,
+      r:Math.random()*1.5+0.3, a:Math.random()
+    }));
+  }
+  window.addEventListener('resize', resize); resize();
+  let t0 = Date.now();
+  function draw(){
+    const t = (Date.now()-t0)/1000;
+    ctx.clearRect(0,0,cv.width,cv.height);
+    // Subtle grid
+    ctx.strokeStyle='rgba(77,163,247,0.03)';
+    ctx.lineWidth=1;
+    const gs=60;
+    for(let x=0;x<cv.width;x+=gs){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();}
+    for(let y=0;y<cv.height;y+=gs){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke();}
+    // Stars
+    stars.forEach(s=>{
+      const a = 0.15+0.1*Math.sin(t*0.7+s.a*10);
+      ctx.beginPath();ctx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      ctx.fillStyle=`rgba(168,212,255,${a})`;ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  draw();
+})();
+
+// ─── SCENE ENGINE ────────────────────────────────────────────────────────────
+function gotoScene(idx){
+  const scenes = document.querySelectorAll('.scene');
+  scenes[currentScene].classList.remove('active');
+  currentScene = idx;
+  elapsed = 0; lastTs = null;
+  scenes[currentScene].classList.add('active');
+  document.getElementById('scene-label').textContent =
+    `Scene ${currentScene+1} / ${N_SCENES} — ${SCENE_NAMES[currentScene]}`;
+  // Reset sub-state
+  sceneTimers = {};
+  onSceneEnter(currentScene);
+}
+function nextScene(){ if(currentScene<N_SCENES-1) gotoScene(currentScene+1); else gotoScene(0); }
+function prevScene(){ if(currentScene>0) gotoScene(currentScene-1); }
+function togglePause(){
+  paused=!paused;
+  document.getElementById('btn-pause').textContent = paused ? '▶ Resume' : '⏸ Pause';
+}
+function restartAll(){ paused=false; document.getElementById('btn-pause').textContent='⏸ Pause'; gotoScene(0); }
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='ArrowRight') nextScene();
+  else if(e.key==='ArrowLeft') prevScene();
+  else if(e.key===' '){e.preventDefault();togglePause();}
+  else if(e.key.toLowerCase()==='r') restartAll();
+});
+
+// ─── MAIN LOOP ────────────────────────────────────────────────────────────────
+function tick(ts){
+  if(!paused && lastTs!==null){
+    const dt = ts - lastTs;
+    elapsed += dt;
+    const prog = clamp(elapsed / SCENE_TIMES[currentScene]);
+    document.getElementById('progress-fill').style.width = (prog*100)+'%';
+    updateScene(currentScene, prog, elapsed);
+    if(elapsed >= SCENE_TIMES[currentScene]) nextScene();
+  }
+  lastTs = ts;
+  rafId = requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+// ─── SCENE ENTER HOOKS ────────────────────────────────────────────────────────
+function onSceneEnter(idx){
+  if(idx===1) initS1();
+  if(idx===2) initS2();
+  if(idx===3) initS3();
+  if(idx===4) initS4();
+  if(idx===5) initS5();
+  if(idx===6) initS6();
+}
+
+// ─── UPDATE DISPATCH ─────────────────────────────────────────────────────────
+function updateScene(idx, t, ms){
+  if(idx===1) drawS1(t);
+  if(idx===2) updateS2(t);
+  if(idx===3) drawS3(t);
+  if(idx===4) drawS4(t);
+  if(idx===5) updateS5(t, ms);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 1 — IBM ARCHITECTURE
+// ════════════════════════════════════════════════════════════════════════════
+function initS1(){
+  const wrap = document.getElementById('s1-canvas-wrap');
+  const cv   = document.getElementById('s1-canvas');
+  cv.width   = wrap.clientWidth;
+  cv.height  = wrap.clientHeight;
+}
+
+function ibmPositions(w,h){
+  const ox=w*0.06, oy=h*0.08, cols=5;
+  const cw=(w*0.84)/4, ch=(h*0.82)/3;
+  return Array.from({length:20},(_,i)=>({x:ox+(i%cols)*cw, y:oy+Math.floor(i/cols)*ch}));
+}
+
+function drawS1(t){
+  const cv = document.getElementById('s1-canvas');
+  const ctx = cv.getContext('2d');
+  const w=cv.width, h=cv.height;
+  ctx.clearRect(0,0,w,h);
+  const pos = ibmPositions(w,h);
+  const fade = clamp(t*5);
+
+  // Edges
+  ctx.lineWidth=1.2;
+  IBM_EDGES.forEach(([a,b])=>{
+    ctx.beginPath();
+    ctx.moveTo(pos[a].x,pos[a].y); ctx.lineTo(pos[b].x,pos[b].y);
+    ctx.strokeStyle=`rgba(69,90,100,${0.55*fade})`;
+    ctx.stroke();
+  });
+
+  // Nodes
+  pos.forEach((p,i)=>{
+    const active = ACTIVE_9.has(i);
+    const r = active ? 13 : 8;
+    if(active && t>0.3){
+      ctx.beginPath(); ctx.arc(p.x,p.y,r+8,0,Math.PI*2);
+      ctx.fillStyle=`rgba(26,111,212,${0.18*fade})`; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(p.x,p.y,r,0,Math.PI*2);
+    ctx.fillStyle = active ? `rgba(26,111,212,${0.92*fade})` : `rgba(69,90,100,${0.6*fade})`;
+    ctx.fill();
+    ctx.strokeStyle=`rgba(255,255,255,${0.3*fade})`; ctx.lineWidth=1;
+    ctx.stroke();
+    if(active){
+      ctx.fillStyle=`rgba(255,255,255,${0.9*fade})`;
+      ctx.font='bold 8px "JetBrains Mono",monospace';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(`Q${i}`,p.x,p.y);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 2 — WHAT WE MEASURE
+// ════════════════════════════════════════════════════════════════════════════
+function initS2(){
+  document.getElementById('sim-fill').style.width='0%';
+  document.getElementById('sim-pct').textContent='0%';
+  ['rc-ibm','rc-eff','rc-ours'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+}
+
+function updateS2(t){
+  // Sim bar: runs 0.28→0.65
+  const sp = phase(t,0.28,0.65);
+  document.getElementById('sim-fill').style.width=(sp*100)+'%';
+  document.getElementById('sim-pct').textContent=Math.round(sp*100)+'%';
+  if(sp>=1) document.getElementById('sim-text').classList.remove('pulse');
+
+  // Result cards
+  const delays = [0.66,0.73,0.80];
+  ['rc-ibm','rc-eff','rc-ours'].forEach((id,i)=>{
+    if(t>delays[i]) document.getElementById(id).classList.add('visible');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 3 — GA OPTIMIZATION
+// ════════════════════════════════════════════════════════════════════════════
+function rndLayout9(seed){
+  // LCG seeded random
+  let s=seed;
+  const rng=()=>{ s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
+  return Array.from({length:9},()=>({x:rng(),y:rng()}));
+}
+
+function ringLayout9(cx,cy,r){
+  return Array.from({length:9},(_,i)=>{
+    const a=2*Math.PI*i/9 - Math.PI/2;
+    return {x:cx+r*Math.cos(a), y:cy+r*Math.sin(a)};
+  });
+}
+
+function initS3(){
+  ['ga-canvas-left','ga-canvas-right'].forEach(id=>{
+    const cv=document.getElementById(id);
+    const p=cv.parentElement;
+    cv.width=p.clientWidth; cv.height=p.clientHeight-32;
+  });
+  document.getElementById('ga-fill').style.width='0%';
+}
+
+function drawQPEGraph(ctx, pos, edges, nodeCol, edgeAlpha, nodeAlpha, glow){
+  ctx.lineWidth=1.8;
+  edges.forEach(([a,b])=>{
+    ctx.beginPath();
+    ctx.moveTo(pos[a].x,pos[a].y); ctx.lineTo(pos[b].x,pos[b].y);
+    ctx.strokeStyle=`rgba(77,163,247,${edgeAlpha})`; ctx.stroke();
+  });
+  pos.forEach((p,i)=>{
+    if(glow){
+      ctx.beginPath(); ctx.arc(p.x,p.y,16,0,Math.PI*2);
+      ctx.fillStyle='rgba(26,111,212,0.15)'; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(p.x,p.y,12,0,Math.PI*2);
+    ctx.fillStyle=nodeCol.replace('A',nodeAlpha); ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.3)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle=`rgba(255,255,255,${nodeAlpha})`;
+    ctx.font='bold 8px "JetBrains Mono",monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(`Q${i}`,p.x,p.y);
+  });
+}
+
+function drawS3(t){
+  // Progress bar
+  const gp = phase(t,0.08,0.58);
+  document.getElementById('ga-fill').style.width=(gp*100)+'%';
+  document.getElementById('ga-lam').textContent = Math.max(1,Math.ceil(gp*6));
+  document.getElementById('ga-gen').textContent = Math.round(gp*300);
+  document.getElementById('ga-fit').textContent = (-4.5+gp*3.1).toFixed(2);
+
+  const morph = ease(phase(t,0.20,0.62));
+
+  // Left canvas — random layout
+  (()=>{
+    const cv=document.getElementById('ga-canvas-left');
+    const ctx=cv.getContext('2d');
+    const w=cv.width,h=cv.height;
+    ctx.clearRect(0,0,w,h);
+    const raw=rndLayout9(99);
+    const pos=raw.map(p=>({x:p.x*w*0.82+w*0.09, y:p.y*h*0.80+h*0.10}));
+    const a=clamp(1-morph*0.55);
+    drawQPEGraph(ctx,pos,QPE_EDGES,'rgba(69,90,100,A)',a*0.55,a,false);
+  })();
+
+  // Right canvas — morphing to ring
+  (()=>{
+    const cv=document.getElementById('ga-canvas-right');
+    const ctx=cv.getContext('2d');
+    const w=cv.width,h=cv.height;
+    ctx.clearRect(0,0,w,h);
+    const raw=rndLayout9(99);
+    const rndPos=raw.map(p=>({x:p.x*w*0.82+w*0.09, y:p.y*h*0.80+h*0.10}));
+    const r=Math.min(w,h)*0.36;
+    const optPos=ringLayout9(w*0.5,h*0.5,r);
+    const pos=rndPos.map((rp,i)=>({
+      x:lerp(rp.x,optPos[i].x,morph),
+      y:lerp(rp.y,optPos[i].y,morph)
+    }));
+    drawQPEGraph(ctx,pos,QPE_EDGES,'rgba(26,111,212,A)',0.7,0.95,morph>0.8);
+  })();
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 4 — PCB ANALOGY
+// ════════════════════════════════════════════════════════════════════════════
+const PCB_COMPS=[
+  {label:'MCU', color:'#1565C0', w:54,h:34},
+  {label:'PWR', color:'#0277BD', w:40,h:28},
+  {label:'ADC', color:'#0288D1', w:36,h:24},
+  {label:'SEN-1',color:'#0288D1',w:32,h:22},
+  {label:'SEN-2',color:'#0288D1',w:32,h:22},
+  {label:'CAP',  color:'#546E8A',w:20,h:26},
+  {label:'RES',  color:'#546E8A',w:22,h:12},
+  {label:'CONN', color:'#1B5E20',w:34,h:18},
+];
+const PCB_CONNS=[[0,1],[0,2],[0,3],[0,4],[1,5],[1,6],[2,3],[3,7],[4,7],[0,7]];
+
+function initS4(){
+  ['pcb-canvas-left','pcb-canvas-right'].forEach(id=>{
+    const cv=document.getElementById(id);
+    const p=cv.parentElement;
+    cv.width=p.clientWidth; cv.height=p.clientHeight-28;
+  });
+}
+
+function getPCBLayouts(w,h){
+  let s=21;
+  const rng=()=>{ s=(s*1664525+1013904223)&0xffffffff; return (s>>>0)/0xffffffff; };
+  const margin=50;
+  const rnd=Array.from({length:8},()=>({x:margin+rng()*(w-2*margin),y:margin+rng()*(h-2*margin)}));
+  const cx=w/2,cy=h/2,bw=w*0.7,bh=h*0.7;
+  const opt=[
+    {x:cx,       y:cy},
+    {x:cx-bw*0.3,y:cy},
+    {x:cx+bw*0.3,y:cy-bh*0.22},
+    {x:cx,       y:cy-bh*0.30},
+    {x:cx+bw*0.3,y:cy+bh*0.22},
+    {x:cx-bw*0.28,y:cy-bh*0.26},
+    {x:cx-bw*0.28,y:cy+bh*0.26},
+    {x:cx,       y:cy+bh*0.36},
+  ];
+  return {rnd,opt};
+}
+
+function drawPCBBoard(ctx,positions,alpha,optimised,morph){
+  PCB_CONNS.forEach(([a,b])=>{
+    const pa=positions[a],pb=positions[b];
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.lineTo(pb.x,pb.y);
+    ctx.strokeStyle=optimised?`rgba(26,111,212,${0.6*alpha})`:
+                              `rgba(100,120,140,${0.45*alpha})`;
+    ctx.lineWidth=optimised?2:1.4; ctx.stroke();
+  });
+  PCB_COMPS.forEach((comp,i)=>{
+    if(i>=positions.length) return;
+    const {x,y}=positions[i];
+    const cx2=x-comp.w/2, cy2=y-comp.h/2;
+    ctx.beginPath();
+    ctx.roundRect(cx2,cy2,comp.w,comp.h,4);
+    const r=parseInt(comp.color.slice(1,3),16);
+    const g=parseInt(comp.color.slice(3,5),16);
+    const b=parseInt(comp.color.slice(5,7),16);
+    ctx.fillStyle=`rgba(${r},${g},${b},${alpha})`; ctx.fill();
+    ctx.strokeStyle=`rgba(255,255,255,${0.35*alpha})`; ctx.lineWidth=1; ctx.stroke();
+    if(optimised && morph>0.82){
+      ctx.strokeStyle=`rgba(0,200,255,${0.45*morph})`; ctx.lineWidth=2; ctx.stroke();
+    }
+    ctx.fillStyle=`rgba(255,255,255,${0.92*alpha})`;
+    ctx.font='bold 7px "JetBrains Mono",monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(comp.label,x,y);
+  });
+}
+
+function drawS4(t){
+  const morph=ease(phase(t,0.25,0.68));
+
+  ['pcb-canvas-left','pcb-canvas-right'].forEach((id,side)=>{
+    const cv=document.getElementById(id);
+    if(!cv.width) return;
+    const ctx=cv.getContext('2d');
+    const w=cv.width,h=cv.height;
+    ctx.clearRect(0,0,w,h);
+    const {rnd,opt}=getPCBLayouts(w,h);
+    if(side===0){
+      drawPCBBoard(ctx,rnd,clamp(1-morph*0.5),false,0);
+    } else {
+      const pos=rnd.map((rp,i)=>({
+        x:lerp(rp.x,opt[i].x,morph),
+        y:lerp(rp.y,opt[i].y,morph)
+      }));
+      drawPCBBoard(ctx,pos,1,true,morph);
+    }
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 5 — MOLECULAR ENERGY
+// ════════════════════════════════════════════════════════════════════════════
+let ibmSeries=[], ourSeries=[];
+
+function genNoisySeries(seed){
+  let s=seed;
+  const rng=()=>{ s=(s*1664525+1013904223)&0xffffffff; return ((s>>>0)/0xffffffff)*2-1; };
+  return Array.from({length:80},(_,i)=>{
+    const noise=rng()*0.22*Math.max(0.2,1-i/80*0.55);
+    return TRUE_ENERGY + noise + rng()*0.09;
+  });
+}
+function genCleanSeries(){
+  return Array.from({length:80},(_,i)=>
+    TRUE_ENERGY + Math.exp(-i/22)*0.55 + Math.sin(i*0.6)*Math.exp(-i/22)*0.08);
+}
+
+function initS5(){
+  ibmSeries = genNoisySeries(42);
+  ourSeries  = genCleanSeries();
+  ['mol-left','mol-right','plot-left','plot-right'].forEach(id=>{
+    const cv=document.getElementById(id);
+    const p=cv.parentElement;
+    cv.width=p.clientWidth*devicePixelRatio; cv.height=p.clientHeight*devicePixelRatio;
+    cv.style.width=p.clientWidth+'px'; cv.style.height=p.clientHeight+'px';
+    cv.getContext('2d').scale(devicePixelRatio,devicePixelRatio);
+  });
+}
+
+let molAngle=0;
+function updateS5(t, ms){
+  molAngle = (ms/1000)*1.8;
+  const dataT = phase(t,0.08,0.92);
+  const idx = Math.min(ibmSeries.length-1, Math.round(dataT*(ibmSeries.length-1)));
+
+  document.getElementById('e-ibm').textContent = ibmSeries[idx].toFixed(4);
+  document.getElementById('e-our').textContent = ourSeries[idx].toFixed(4);
+
+  drawMolecule('mol-left',  true,  molAngle);
+  drawMolecule('mol-right', false, molAngle);
+  drawPlot('plot-left',  ibmSeries, idx, true);
+  drawPlot('plot-right', ourSeries,  idx, false);
+}
+
+function drawMolecule(id, noisy, angle){
+  const cv=document.getElementById(id);
+  const ctx=cv.getContext('2d');
+  const pw=cv.clientWidth, ph=cv.clientHeight;
+  ctx.clearRect(0,0,pw,ph);
+
+  const cx=pw/2,cy=ph/2, sep=pw*0.24, rA=ph*0.25;
+
+  // Bond
+  ctx.beginPath(); ctx.moveTo(cx-sep,cy); ctx.lineTo(cx+sep,cy);
+  ctx.strokeStyle=noisy?'rgba(224,49,49,0.7)':'rgba(18,184,134,0.7)';
+  ctx.lineWidth=2.5; ctx.stroke();
+
+  // Wobble circle (noisy only)
+  if(noisy){
+    ctx.beginPath(); ctx.arc(cx,cy,sep*1.2,0,Math.PI*2);
+    ctx.strokeStyle='rgba(224,49,49,0.12)';
+    ctx.setLineDash([4,4]); ctx.lineWidth=1; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  [-1,1].forEach(sign=>{
+    const ax=cx+sign*sep;
+    // Orbit ellipse
+    ctx.beginPath();
+    ctx.ellipse(ax,cy,rA*1.6,rA*0.9,0,0,Math.PI*2);
+    ctx.strokeStyle=noisy?'rgba(224,49,49,0.15)':'rgba(18,184,134,0.15)';
+    ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Atom
+    const grad=ctx.createRadialGradient(ax-rA*0.3,cy-rA*0.3,0,ax,cy,rA);
+    grad.addColorStop(0, noisy?'rgba(255,120,120,0.95)':'rgba(80,220,160,0.95)');
+    grad.addColorStop(1, noisy?'rgba(160,30,30,0.85)':'rgba(10,130,90,0.85)');
+    ctx.beginPath(); ctx.arc(ax,cy,rA,0,Math.PI*2);
+    ctx.fillStyle=grad; ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,0.25)'; ctx.lineWidth=1; ctx.stroke();
+
+    // Label
+    ctx.fillStyle='rgba(255,255,255,0.92)';
+    ctx.font='bold 12px "JetBrains Mono",monospace';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('H',ax,cy);
+
+    // Electron
+    const ea=angle*sign;
+    const ex=ax+rA*1.6*Math.cos(ea), ey=cy+rA*0.9*Math.sin(ea);
+    ctx.beginPath(); ctx.arc(ex,ey,4,0,Math.PI*2);
+    ctx.fillStyle=noisy?'rgba(255,180,100,0.9)':'rgba(100,220,255,0.9)'; ctx.fill();
+  });
+}
+
+function drawPlot(id, series, idx, noisy){
+  const cv=document.getElementById(id);
+  const ctx=cv.getContext('2d');
+  const pw=cv.clientWidth, ph=cv.clientHeight;
+  ctx.clearRect(0,0,pw,ph);
+
+  const PAD={l:36,r:12,t:12,b:24};
+  const iw=pw-PAD.l-PAD.r, ih=ph-PAD.t-PAD.b;
+  const yMin=-1.65, yMax=-0.55;
+  const toX=i=>PAD.l+i/(series.length-1)*iw;
+  const toY=v=>PAD.t+ih-(v-yMin)/(yMax-yMin)*ih;
+
+  // Frame
+  ctx.strokeStyle='rgba(77,163,247,0.1)'; ctx.lineWidth=1;
+  ctx.strokeRect(PAD.l,PAD.t,iw,ih);
+
+  // True value line
+  const ty=toY(TRUE_ENERGY);
+  ctx.beginPath(); ctx.moveTo(PAD.l,ty); ctx.lineTo(PAD.l+iw,ty);
+  ctx.strokeStyle='rgba(240,180,41,0.4)'; ctx.setLineDash([5,4]); ctx.lineWidth=1; ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(240,180,41,0.6)'; ctx.font='9px "JetBrains Mono",monospace';
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText('−1.1362',PAD.l+2,ty-2);
+
+  // Axis labels
+  ctx.fillStyle='rgba(122,167,204,0.6)'; ctx.font='9px "JetBrains Mono",monospace';
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.fillText('Ha',PAD.l-2,PAD.t+4);
+  ctx.textAlign='right'; ctx.textBaseline='bottom';
+  ctx.fillText('iter→',PAD.l+iw,PAD.t+ih+2);
+
+  // Y axis ticks
+  [-1.6,-1.4,-1.2,-1.0,-0.8,-0.6].forEach(v=>{
+    const y=toY(v);
+    ctx.beginPath(); ctx.moveTo(PAD.l-4,y); ctx.lineTo(PAD.l,y);
+    ctx.strokeStyle='rgba(77,163,247,0.2)'; ctx.lineWidth=1; ctx.stroke();
+    ctx.fillStyle='rgba(122,167,204,0.5)'; ctx.font='8px "JetBrains Mono",monospace';
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillText(v.toFixed(1),PAD.l-5,y);
+  });
+
+  // Data line
+  if(idx>0){
+    ctx.beginPath();
+    for(let i=0;i<=idx;i++){
+      const x=toX(i), y=clamp(toY(series[i]),PAD.t,PAD.t+ih);
+      i===0 ? ctx.moveTo(x,y) : ctx.lineTo(x,y);
+    }
+    ctx.strokeStyle=noisy?'rgba(224,49,49,0.9)':'rgba(18,184,134,0.9)';
+    ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+
+    // Current point
+    const cx2=toX(idx), cy2=clamp(toY(series[idx]),PAD.t,PAD.t+ih);
+    ctx.beginPath(); ctx.arc(cx2,cy2,4,0,Math.PI*2);
+    ctx.fillStyle=noisy?'#e03131':'#12b886'; ctx.fill();
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// SCENE 6 — SUMMARY
+// ════════════════════════════════════════════════════════════════════════════
+function initS6(){
+  ['mr0','mr1','mr2','mr3','mr4'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+  ['hk0','hk1','hk2'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+}
+// updateS6 handled by updateScene check
+function updateScene(idx, t, ms){
+  if(idx===1) drawS1(t);
+  if(idx===2) updateS2(t);
+  if(idx===3) drawS3(t);
+  if(idx===4) drawS4(t);
+  if(idx===5) updateS5(t, ms);
+  if(idx===6){
+    const delays=[0.08,0.18,0.28,0.38,0.48];
+    delays.forEach((d,i)=>{ if(t>d) document.getElementById(`mr${i}`).classList.add('visible'); });
+    [0.55,0.65,0.75].forEach((d,i)=>{ if(t>d) document.getElementById(`hk${i}`).classList.add('visible'); });
+  }
+}
+
+// ─── RESIZE HANDLER ───────────────────────────────────────────────────────────
+window.addEventListener('resize', ()=>{
+  if(currentScene===1) initS1();
+  if(currentScene===3) initS3();
+  if(currentScene===4) initS4();
+  if(currentScene===5) initS5();
+});
+
+// ─── BOOT ────────────────────────────────────────────────────────────────────
+onSceneEnter(0);
+</script>
+</body>
+</html>
